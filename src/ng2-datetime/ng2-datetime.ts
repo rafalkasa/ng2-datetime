@@ -3,47 +3,68 @@ import {
     SimpleChanges, OnChanges
 } from '@angular/core';
 import {ControlValueAccessor, NgControl} from '@angular/forms';
+import {TimepickerEvent} from './timepicker-event-interface';
 
 @Component({
     selector: 'datetime',
     template: `
     <div class="form-inline">
         <div id="{{idDatePicker}}" class="input-group date">
-            <input type="text" class="form-control"/>
+            <input type="text" class="form-control"
+                   [attr.readonly]="readonly"
+                   [attr.placeholder]="datepickerOptions.placeholder || 'Choose date'"
+                   [(ngModel)]="dateModel"
+                   (keyup)="checkEmptyValue($event)"/>
             <div class="input-group-addon">
                 <span [ngClass]="datepickerOptions.icon || 'glyphicon glyphicon-th'"></span>
             </div>
         </div>
         <div class="input-group bootstrap-timepicker timepicker">
-            <input id="{{idTimePicker}}" type="text" class="form-control input-small">
+            <input id="{{idTimePicker}}" type="text" class="form-control input-small" 
+                   [attr.readonly]="readonly"
+                   [attr.placeholder]="timepickerOptions.placeholder || 'Set time'"
+                   [(ngModel)]="timeModel"
+                   (keyup)="checkEmptyValue($event)">
             <span class="input-group-addon"><i [ngClass]="timepickerOptions.icon || 'glyphicon glyphicon-time'"></i></span>
         </div>
+        <button *ngIf="hasClearButton" type="button" (click)="onClearClick()">Clear</button>
     </div>
    `
 })
 export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestroy, OnChanges {
     @Output()
-    dateChange:EventEmitter<Date> = new EventEmitter<Date>();
+    dateChange: EventEmitter<Date> = new EventEmitter<Date>();
+
     @Input('timepicker')
-    timepickerOptions:any = {};
+    timepickerOptions: any = {};
+
     @Input('datepicker')
-    datepickerOptions:any = {};
+    datepickerOptions: any = {};
 
-    date:Date; // ngModel
+    @Input('hasClearButton')
+    hasClearButton = false;
+
+    @Input()
+    readonly = null;
+
+    date: Date; // ngModel
+    dateModel: string;
+    timeModel: string;
+
     // instances
-    datepicker:any;
-    timepicker:any;
+    datepicker: any;
+    timepicker: any;
 
-    private idDatePicker:string = uniqueId('q-datepicker_');
-    private idTimePicker:string = uniqueId('q-timepicker_');
+    private idDatePicker: string = uniqueId('q-datepicker_');
+    private idTimePicker: string = uniqueId('q-timepicker_');
 
     @HostListener('dateChange', ['$event'])
-    onChange = (_) => {
+    onChange = (_: any) => {
     };
     onTouched = () => {
     };
 
-    constructor(ngControl:NgControl) {
+    constructor(ngControl: NgControl) {
         ngControl.valueAccessor = this; // override valueAccessor
     }
 
@@ -60,7 +81,7 @@ export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestro
         }
     }
 
-    ngOnChanges(changes:SimpleChanges) {
+    ngOnChanges(changes: SimpleChanges) {
         if (changes) {
             if (changes['datepickerOptions'] && this.datepicker) {
                 this.datepicker.datepicker('destroy');
@@ -85,7 +106,7 @@ export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestro
         }
     }
 
-    writeValue(value:any):void {
+    writeValue(value: any): void {
         this.date = value;
         if (isDate(this.date)) {
             setTimeout(() => {
@@ -94,22 +115,42 @@ export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestro
         }
     }
 
-    registerOnChange(fn:(_:any) => void):void {
+    registerOnChange(fn: (_: any) => void): void {
         this.onChange = fn;
     }
 
-    registerOnTouched(fn:() => void):void {
+    registerOnTouched(fn: () => void): void {
         this.onTouched = fn;
+    }
+
+    checkEmptyValue(e: any) {
+        const value = e.target.value;
+        if (value === '' && (
+                this.timepickerOptions === false ||
+                this.datepickerOptions === false ||
+                (this.timeModel === '' && this.dateModel === '')
+            )) {
+            this.dateChange.emit(null);
+        }
+    }
+
+    onClearClick() {
+        this.dateChange.emit(null);
+        if (this.timepicker) {
+            this.timepicker.timepicker('setTime', null);
+        }
+        this.updateDatepicker(null);
     }
 
     //////////////////////////////////
 
-    private init():void {
+    private init(): void {
         if (!this.datepicker && this.datepickerOptions !== false) {
-            this.datepicker = (<any>$('#' + this.idDatePicker)).datepicker(this.datepickerOptions);
+            let options = jQuery.extend({enableOnReadonly: !this.readonly}, this.datepickerOptions);
+            this.datepicker = (<any>$('#' + this.idDatePicker)).datepicker(options);
             this.datepicker
-                .on('changeDate', (e) => {
-                    let newDate:Date = e.date;
+                .on('changeDate', (e: any) => {
+                    let newDate: Date = e.date;
 
                     if (isDate(this.date) && isDate(newDate)) {
                         // get hours/minutes
@@ -130,9 +171,9 @@ export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestro
             let options = jQuery.extend({defaultTime: false}, this.timepickerOptions);
             this.timepicker = (<any>$('#' + this.idTimePicker)).timepicker(options);
             this.timepicker
-                .on('changeTime.timepicker', (e) => {
-                    let meridian = e.time.meridian;
-                    let hours = e.time.hours;
+                .on('changeTime.timepicker', (e: TimepickerEvent) => {
+                    let {meridian, hours} = e.time;
+
                     if (meridian) {
                         // has meridian -> convert 12 to 24h
                         if (meridian === 'PM' && hours < 12) {
@@ -141,16 +182,15 @@ export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestro
                         if (meridian === 'AM' && hours === 12) {
                             hours = hours - 12;
                         }
-                        hours = this.pad(hours);
+                        hours = parseInt(this.pad(hours));
                     }
+
                     if (!isDate(this.date)) {
                         this.date = new Date();
-
-                        if (this.datepicker !== undefined) {
-                            this.datepicker.datepicker('update', this.date.toUTCString());
-                        }
+                        this.updateDatepicker(this.date);
                     }
-                    this.date.setHours(parseInt(hours));
+
+                    this.date.setHours(hours);
                     this.date.setMinutes(e.time.minutes);
                     this.dateChange.emit(this.date);
                 });
@@ -159,34 +199,43 @@ export class NKDatetime implements ControlValueAccessor, AfterViewInit, OnDestro
         }
     }
 
-    private updateModel(date?:Date):void {
-        // update datepicker
-        if (this.datepicker !== undefined) {
-            this.datepicker.datepicker('update', this.date);
-        }
+    private updateModel(date: Date): void {
+        this.updateDatepicker(date);
 
         // update timepicker
         if (this.timepicker !== undefined) {
-            let hours = this.date.getHours();
+            let hours = date.getHours();
             if (this.timepickerOptions.showMeridian) {
                 // Convert 24 to 12 hour system
                 hours = (hours === 0 || hours === 12) ? 12 : hours % 12;
             }
-            const meridian = this.date.getHours() >= 12 ? ' PM' : ' AM';
-            this.timepicker.timepicker('setTime', this.pad(hours) + ':' + this.date.getMinutes() + meridian);
+            const meridian = date.getHours() >= 12 ? ' PM' : ' AM';
+            const time =
+                this.pad(hours) + ':' +
+                this.pad(this.date.getMinutes()) +
+                (this.timepickerOptions.showMeridian || this.timepickerOptions.showMeridian === undefined
+                    ? meridian : '');
+            this.timepicker.timepicker('setTime', time);
+            this.timeModel = time; // fix initial empty timeModel bug
         }
     }
 
-    private pad(value:any):string {
-        return (value && value.toString().length < 2) ? '0' + value : value.toString();
+    private updateDatepicker(value?: any) {
+        if (this.datepicker !== undefined) {
+            this.datepicker.datepicker('update', value);
+        }
+    }
+
+    private pad(value: any): string {
+        return value.toString().length < 2 ? '0' + value : value.toString();
     }
 }
 
-let id:number = 0;
-function uniqueId(prefix:string):string {
+let id: number = 0;
+function uniqueId(prefix: string): string {
     return prefix + ++id;
 }
 
-function isDate(obj) {
+function isDate(obj: any) {
     return Object.prototype.toString.call(obj) === '[object Date]';
 }
